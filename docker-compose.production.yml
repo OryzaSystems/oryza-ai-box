@@ -1,0 +1,465 @@
+# ==========================================
+# AI BOX - Production Docker Compose
+# Production-ready deployment configuration
+# ==========================================
+
+version: '3.8'
+
+services:
+  # ==========================================
+  # CORE SERVICES
+  # ==========================================
+  
+  api-gateway:
+    build:
+      context: .
+      dockerfile: deployment/docker/Dockerfile.api-gateway
+      target: production
+      platforms:
+        - linux/amd64
+        - linux/arm64
+    image: ghcr.io/oryzasystems/ai-box-api-gateway:${IMAGE_TAG:-latest}
+    container_name: aibox-api-gateway-prod
+    restart: unless-stopped
+    ports:
+      - "${API_GATEWAY_PORT:-8000}:8000"
+    environment:
+      - ENVIRONMENT=production
+      - SERVICE_NAME=api-gateway
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - MODEL_SERVER_URL=http://model-server:8001
+      - DATA_MANAGER_URL=http://data-manager:8002
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      - RATE_LIMIT_REQUESTS=${RATE_LIMIT_REQUESTS:-1000}
+      - RATE_LIMIT_WINDOW=${RATE_LIMIT_WINDOW:-3600}
+    volumes:
+      - ./logs:/app/logs:rw
+      - ./config:/app/config:ro
+    networks:
+      - aibox-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/app/health_check.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  model-server:
+    build:
+      context: .
+      dockerfile: deployment/docker/Dockerfile.model-server
+      target: ${MODEL_SERVER_TARGET:-production}
+      platforms:
+        - linux/amd64
+        - linux/arm64
+      args:
+        - PLATFORM=${AI_PLATFORM:-cpu}
+    image: ghcr.io/oryzasystems/ai-box-model-server:${IMAGE_TAG:-latest}
+    container_name: aibox-model-server-prod
+    restart: unless-stopped
+    ports:
+      - "${MODEL_SERVER_PORT:-8001}:8001"
+    environment:
+      - ENVIRONMENT=production
+      - SERVICE_NAME=model-server
+      - DEVICE=${DEVICE:-auto}
+      - MODEL_PATH=/app/models
+      - CACHE_PATH=/app/cache
+      - BATCH_SIZE=${BATCH_SIZE:-4}
+      - MAX_WORKERS=${MAX_WORKERS:-2}
+      - OPTIMIZATION_LEVEL=${OPTIMIZATION_LEVEL:-medium}
+      - GPU_MEMORY_FRACTION=${GPU_MEMORY_FRACTION:-0.8}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./models:/app/models:rw
+      - ./cache:/app/cache:rw
+      - ./logs:/app/logs:rw
+      - ./config:/app/config:ro
+    networks:
+      - aibox-network
+    healthcheck:
+      test: ["CMD", "/app/health_check.sh"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 4G
+        reservations:
+          cpus: '2.0'
+          memory: 2G
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+        window: 300s
+
+  data-manager:
+    build:
+      context: .
+      dockerfile: deployment/docker/Dockerfile.data-manager
+      target: production
+      platforms:
+        - linux/amd64
+        - linux/arm64
+    image: ghcr.io/oryzasystems/ai-box-data-manager:${IMAGE_TAG:-latest}
+    container_name: aibox-data-manager-prod
+    restart: unless-stopped
+    ports:
+      - "${DATA_MANAGER_PORT:-8002}:8002"
+    environment:
+      - ENVIRONMENT=production
+      - SERVICE_NAME=data-manager
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - MONGODB_URL=${MONGODB_URL}
+      - BACKUP_SCHEDULE=${BACKUP_SCHEDULE:-0 2 * * *}
+      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-7}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./data:/app/data:rw
+      - ./backups:/app/backups:rw
+      - ./logs:/app/logs:rw
+      - ./config:/app/config:ro
+    networks:
+      - aibox-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/app/health_check.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  # ==========================================
+  # DATABASE SERVICES
+  # ==========================================
+  
+  postgres:
+    image: postgres:15-alpine
+    container_name: aibox-postgres-prod
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-aibox}
+      - POSTGRES_USER=${POSTGRES_USER:-aibox}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./config/database_schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./deployment/scripts/postgres_backup.sh:/usr/local/bin/postgres_backup.sh:ro
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    networks:
+      - aibox-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aibox} -d ${POSTGRES_DB:-aibox}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    command: >
+      postgres
+      -c shared_preload_libraries=pg_stat_statements
+      -c pg_stat_statements.track=all
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c effective_cache_size=1GB
+      -c maintenance_work_mem=64MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c default_statistics_target=100
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c work_mem=4MB
+      -c min_wal_size=1GB
+      -c max_wal_size=4GB
+
+  redis:
+    image: redis:7-alpine
+    container_name: aibox-redis-prod
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --requirepass ${REDIS_PASSWORD}
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --tcp-keepalive 60
+      --timeout 300
+    volumes:
+      - redis_data:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    networks:
+      - aibox-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+  mongo:
+    image: mongo:6
+    container_name: aibox-mongo-prod
+    restart: unless-stopped
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_USER:-aibox}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD}
+      - MONGO_INITDB_DATABASE=${MONGO_DB:-aibox}
+    volumes:
+      - mongo_data:/data/db
+      - ./deployment/scripts/mongo_backup.sh:/usr/local/bin/mongo_backup.sh:ro
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    networks:
+      - aibox-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  # ==========================================
+  # MONITORING SERVICES
+  # ==========================================
+  
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: aibox-prometheus-prod
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    volumes:
+      - ./deployment/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    networks:
+      - aibox-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: aibox-grafana-prod
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./deployment/monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./deployment/monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    networks:
+      - aibox-network
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+
+  # ==========================================
+  # REVERSE PROXY & LOAD BALANCER
+  # ==========================================
+  
+  nginx:
+    image: nginx:alpine
+    container_name: aibox-nginx-prod
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./deployment/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deployment/nginx/ssl:/etc/nginx/ssl:ro
+      - ./logs/nginx:/var/log/nginx:rw
+    networks:
+      - aibox-network
+    depends_on:
+      - api-gateway
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+
+# ==========================================
+# NETWORKS
+# ==========================================
+networks:
+  aibox-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+          gateway: 172.20.0.1
+    driver_opts:
+      com.docker.network.bridge.name: aibox0
+      com.docker.network.bridge.enable_icc: "true"
+      com.docker.network.bridge.enable_ip_masquerade: "true"
+
+# ==========================================
+# VOLUMES
+# ==========================================
+volumes:
+  postgres_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH:-./data}/postgres
+  
+  redis_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH:-./data}/redis
+  
+  mongo_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH:-./data}/mongo
+  
+  prometheus_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH:-./data}/prometheus
+  
+  grafana_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH:-./data}/grafana
+
+# ==========================================
+# SECRETS (for Docker Swarm)
+# ==========================================
+secrets:
+  postgres_password:
+    external: true
+  redis_password:
+    external: true
+  mongo_password:
+    external: true
+  jwt_secret:
+    external: true
+  grafana_password:
+    external: true

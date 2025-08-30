@@ -143,15 +143,32 @@ dev-stop: ## ⏹️ Stop development environment
 # ==========================================
 prod: ## 🚀 Start production environment
 	@echo "$(BLUE)Starting production environment...$(NC)"
-	$(DOCKER_COMPOSE) up -d
+	$(DOCKER_COMPOSE) -f docker-compose.production.yml up -d
 	@echo "$(GREEN)✅ Production environment started!$(NC)"
+	@echo "$(YELLOW)Services:$(NC)"
+	@echo "  • API Gateway: https://localhost"
+	@echo "  • Grafana: https://localhost/grafana"
+	@echo "  • Prometheus: https://localhost/prometheus"
 
 prod-logs: ## 📋 Show production logs
-	$(DOCKER_COMPOSE) logs -f
+	$(DOCKER_COMPOSE) -f docker-compose.production.yml logs -f
 
 prod-stop: ## ⏹️ Stop production environment
 	@echo "$(BLUE)Stopping production environment...$(NC)"
-	$(DOCKER_COMPOSE) down
+	$(DOCKER_COMPOSE) -f docker-compose.production.yml down
+
+prod-build: ## 🏗️ Build production images
+	@echo "$(BLUE)Building production images...$(NC)"
+	./deployment/scripts/build_images.sh
+
+prod-build-push: ## 🚀 Build and push production images
+	@echo "$(BLUE)Building and pushing production images...$(NC)"
+	./deployment/scripts/build_images.sh --push
+
+prod-deploy: ## 🚀 Deploy to production
+	@echo "$(BLUE)Deploying to production...$(NC)"
+	@read -p "Enter target host IP: " HOST_IP; \
+	./deployment/scripts/deploy.sh -e production -p auto -h $$HOST_IP
 
 # ==========================================
 # Deployment Commands

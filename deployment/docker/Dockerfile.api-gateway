@@ -3,70 +3,76 @@
 # Multi-stage build for production optimization
 # ==========================================
 
+# Build arguments
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
+
 # ==========================================
 # Stage 1: Base Image with Dependencies
 # ==========================================
-FROM python:3.11-slim as base
+FROM oryza-ai-box-base:latest as base
 
-# Set environment variables
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+# Service-specific environment variables
+ENV SERVICE_NAME=api-gateway \
+    SERVICE_PORT=8000 \
+    HEALTH_PORT=8000 \
+    HEALTH_ENDPOINT=/health
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    curl \
-    git \
-    && rm -rf /var/lib/apt/lists/*
-
-# Create app user
-RUN groupadd -r appuser && useradd -r -g appuser appuser
-
-# Set working directory
+# Set working directory (already created in base image)
 WORKDIR /app
+
+# Switch to root temporarily for installation
+USER root
 
 # ==========================================
 # Stage 2: Development Dependencies
 # ==========================================
 FROM base as dev-deps
 
-# Copy requirements
+# Copy requirements and install API Gateway specific dependencies
 COPY requirements.txt pyproject.toml ./
 
-# Install Python dependencies
-RUN pip install --upgrade pip setuptools wheel && \
-    pip install -r requirements.txt
+# Install API Gateway specific dependencies
+RUN pip install --no-cache-dir \
+    # API Gateway specific packages
+    python-multipart>=0.0.6 \
+    python-jose[cryptography]>=3.3.0 \
+    passlib[bcrypt]>=1.7.4 \
+    # Rate limiting
+    slowapi>=0.1.9 \
+    # Request validation
+    email-validator>=2.1.0 \
+    # Additional FastAPI dependencies
+    jinja2>=3.1.2
 
 # ==========================================
 # Stage 3: Production Build
 # ==========================================
-FROM base as production
-
-# Copy installed packages from dev-deps
-COPY --from=dev-deps /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-COPY --from=dev-deps /usr/local/bin /usr/local/bin
+FROM dev-deps as production
 
 # Copy application code
-COPY . .
+COPY --chown=aibox:aibox . .
 
-# Create necessary directories
-RUN mkdir -p /app/logs /app/data && \
-    chown -R appuser:appuser /app
+# Install the application in development mode
+RUN pip install -e .
 
-# Switch to non-root user
-USER appuser
+# Switch back to non-root user
+USER aibox
 
-# Health check
+# Health check using our custom script
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD /app/health_check.sh
 
 # Expose port
 EXPOSE 8000
 
-# Default command
-CMD ["uvicorn", "services.api_gateway.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+# Default command with proper configuration
+CMD ["uvicorn", "services.api_gateway.main:app", \
+     "--host", "0.0.0.0", \
+     "--port", "8000", \
+     "--workers", "1", \
+     "--access-log", \
+     "--log-level", "info"]
 
 # ==========================================
 # Stage 4: Edge Device Optimization

@@ -1,0 +1,171 @@
+# ==========================================
+# AI BOX - Base Image for All Services
+# Multi-platform base with security hardening
+# ==========================================
+
+ARG PYTHON_VERSION=3.11
+ARG PLATFORM=linux/amd64
+
+# ==========================================
+# Stage 1: Base System Setup
+# ==========================================
+FROM --platform=${PLATFORM} python:${PYTHON_VERSION}-slim as base
+
+# Set build arguments
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
+ARG TARGETOS
+ARG TARGETARCH
+
+# Environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    DEBIAN_FRONTEND=noninteractive
+
+# Platform detection
+RUN echo "Building for platform: ${TARGETPLATFORM}" && \
+    echo "Build platform: ${BUILDPLATFORM}" && \
+    echo "Target OS: ${TARGETOS}" && \
+    echo "Target Arch: ${TARGETARCH}"
+
+# Update system and install essential packages
+RUN apt-get update && apt-get install -y \
+    # Essential system packages
+    build-essential \
+    curl \
+    wget \
+    git \
+    ca-certificates \
+    gnupg \
+    lsb-release \
+    # Security packages
+    sudo \
+    # Network tools
+    netcat-openbsd \
+    iputils-ping \
+    # Process management
+    supervisor \
+    # Cleanup
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /tmp/* \
+    && rm -rf /var/tmp/*
+
+# ==========================================
+# Stage 2: Security Hardening
+# ==========================================
+FROM base as security
+
+# Create non-root user with proper permissions
+RUN groupadd -r aibox --gid=1000 && \
+    useradd -r -g aibox --uid=1000 --home-dir=/app --shell=/bin/bash aibox && \
+    mkdir -p /app && \
+    chown -R aibox:aibox /app
+
+# Create necessary directories with proper permissions
+RUN mkdir -p /app/{logs,data,models,cache,config,tmp} && \
+    chown -R aibox:aibox /app && \
+    chmod -R 755 /app
+
+# Install security updates
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Remove unnecessary packages and files
+RUN apt-get autoremove -y && \
+    apt-get autoclean && \
+    rm -rf /var/cache/apt/* && \
+    rm -rf /tmp/* && \
+    rm -rf /var/tmp/* && \
+    find /usr/share/doc -depth -type f ! -name copyright | xargs rm || true && \
+    find /usr/share/man -depth -type f | xargs rm || true
+
+# ==========================================
+# Stage 3: Python Environment
+# ==========================================
+FROM security as python-base
+
+# Upgrade pip and install essential Python packages
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir \
+    # Essential packages
+    fastapi>=0.104.0 \
+    uvicorn[standard]>=0.24.0 \
+    pydantic>=2.5.0 \
+    # Database packages
+    sqlalchemy>=2.0.0 \
+    alembic>=1.12.0 \
+    asyncpg>=0.29.0 \
+    redis>=5.0.0 \
+    # Monitoring packages
+    prometheus-client>=0.19.0 \
+    structlog>=23.2.0 \
+    # Async packages
+    aiofiles>=23.2.0 \
+    httpx>=0.25.0
+
+# ==========================================
+# Stage 4: Platform-Specific Optimizations
+# ==========================================
+FROM python-base as platform-optimized
+
+# Platform-specific optimizations
+RUN if [ "${TARGETARCH}" = "arm64" ]; then \
+        echo "Optimizing for ARM64 architecture"; \
+        # ARM64 specific optimizations
+        apt-get update && apt-get install -y \
+        libblas3 \
+        liblapack3 \
+        libatlas-base-dev \
+        gfortran && \
+        # Install ARM-optimized packages
+        pip install --no-cache-dir \
+        --extra-index-url https://www.piwheels.org/simple/ \
+        numpy \
+        pillow && \
+        apt-get clean && \
+        rm -rf /var/lib/apt/lists/*; \
+    else \
+        echo "Optimizing for x86_64 architecture"; \
+        # x86_64 specific optimizations
+        pip install --no-cache-dir \
+        numpy \
+        pillow; \
+    fi
+
+# ==========================================
+# Stage 5: Final Base Image
+# ==========================================
+FROM platform-optimized as final
+
+# Set working directory
+WORKDIR /app
+
+# Switch to non-root user
+USER aibox
+
+# Health check script
+COPY --chown=aibox:aibox deployment/scripts/health_check.sh /app/health_check.sh
+RUN chmod +x /app/health_check.sh
+
+# Default health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD /app/health_check.sh
+
+# Labels for metadata
+LABEL maintainer="Oryza AI Team <ai@oryza.vn>" \
+      version="1.0.0" \
+      description="AI Box Base Image" \
+      org.opencontainers.image.title="AI Box Base" \
+      org.opencontainers.image.description="Multi-platform base image for AI Box services" \
+      org.opencontainers.image.vendor="Oryza Systems" \
+      org.opencontainers.image.version="1.0.0" \
+      org.opencontainers.image.created="2025-08-30" \
+      org.opencontainers.image.source="https://github.com/OryzaSystems/oryza-ai-box"
+
+# Default command
+CMD ["python", "--version"]
