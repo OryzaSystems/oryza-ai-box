@@ -1,0 +1,153 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "oryza-ai-box"
+version = "1.0.0"
+description = "Professional AI Box for Human and Vehicle Analysis"
+authors = [
+    {name = "Oryza AI Team", email = "ai@oryza.vn"}
+]
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.9"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+keywords = ["ai", "computer-vision", "face-recognition", "vehicle-analysis", "edge-computing"]
+
+dependencies = [
+    "torch>=2.1.0",
+    "torchvision>=0.16.0",
+    "opencv-python>=4.8.0",
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "numpy>=1.24.0",
+    "pandas>=2.1.0",
+    "Pillow>=10.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "black>=23.11.0",
+    "flake8>=6.1.0",
+    "mypy>=1.7.0",
+    "pre-commit>=3.6.0",
+]
+
+gpu = [
+    "tensorflow-gpu>=2.15.0",
+    "torch[cuda]>=2.1.0",
+]
+
+edge = [
+    "ultralytics>=8.0.0",
+    "mediapipe>=0.10.0",
+    "onnxruntime>=1.16.0",
+]
+
+ocr = [
+    "paddlepaddle>=2.5.0",
+    "paddleocr>=2.7.0",
+    "easyocr>=1.7.0",
+    "pytesseract>=0.3.10",
+]
+
+[project.urls]
+Homepage = "https://github.com/oryza-ai/ai-box"
+Documentation = "https://docs.oryza-ai.com/ai-box"
+Repository = "https://github.com/oryza-ai/ai-box.git"
+Issues = "https://github.com/oryza-ai/ai-box/issues"
+
+[project.scripts]
+ai-box = "oryza_ai_box.cli:main"
+ai-box-server = "oryza_ai_box.server:main"
+ai-box-worker = "oryza_ai_box.worker:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["oryza_ai_box*"]
+exclude = ["tests*", "docs*"]
+
+[tool.black]
+line-length = 88
+target-version = ['py39', 'py310', 'py311', 'py312']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers --strict-config"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "gpu: marks tests that require GPU",
+    "edge: marks tests for edge devices",
+]
+
+[tool.coverage.run]
+source = ["oryza_ai_box"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "setup.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
