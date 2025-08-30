@@ -1,0 +1,904 @@
+openapi: 3.0.3
+info:
+  title: Oryza AI Box API
+  description: |
+    Professional Multi-Platform AI System API
+    
+    ## Features
+    - **Human Analysis**: Face recognition, person detection, behavior analysis
+    - **Vehicle Analysis**: License plate recognition, vehicle classification, traffic analytics
+    - **Multi-Platform**: Raspberry Pi 5, Radxa Rock 5, Jetson Nano, Core i5
+    - **Real-time Processing**: Live video streams, real-time inference
+    - **Scalable Architecture**: Microservices with auto-scaling
+    
+  version: 1.0.0
+  contact:
+    name: Oryza AI Team
+    email: ai@oryza.vn
+    url: https://oryza.vn
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8000
+    description: Development server
+  - url: http://192.168.1.100:8000
+    description: Raspberry Pi 5 server
+  - url: http://192.168.1.101:8000
+    description: Radxa Rock 5 server
+  - url: http://192.168.1.102:8000
+    description: Jetson Nano server
+
+tags:
+  - name: Authentication
+    description: User authentication and authorization
+  - name: Devices
+    description: Device management and monitoring
+  - name: AI Models
+    description: AI model management and deployment
+  - name: Human Analysis
+    description: Face recognition, person detection, behavior analysis
+  - name: Vehicle Analysis
+    description: License plate recognition, vehicle classification, traffic analytics
+  - name: System
+    description: System configuration and monitoring
+  - name: Analytics
+    description: Data analytics and reporting
+
+paths:
+  # ==========================================
+  # AUTHENTICATION
+  # ==========================================
+  /auth/login:
+    post:
+      tags: [Authentication]
+      summary: User login
+      description: Authenticate user and return JWT token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                  example: admin
+                password:
+                  type: string
+                  example: admin123
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  token_type:
+                    type: string
+                    example: bearer
+                  expires_in:
+                    type: integer
+                    example: 3600
+                  user:
+                    $ref: '#/components/schemas/User'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/logout:
+    post:
+      tags: [Authentication]
+      summary: User logout
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Logout successful
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/refresh:
+    post:
+      tags: [Authentication]
+      summary: Refresh JWT token
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  expires_in:
+                    type: integer
+
+  # ==========================================
+  # DEVICES
+  # ==========================================
+  /devices:
+    get:
+      tags: [Devices]
+      summary: List all devices
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [online, offline, maintenance]
+        - name: device_type
+          in: query
+          schema:
+            type: string
+            enum: [raspberry-pi-5, radxa-rock-5, jetson-nano, core-i5]
+      responses:
+        '200':
+          description: List of devices
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  devices:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Device'
+                  total:
+                    type: integer
+    post:
+      tags: [Devices]
+      summary: Register new device
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceCreate'
+      responses:
+        '201':
+          description: Device registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+
+  /devices/{device_id}:
+    get:
+      tags: [Devices]
+      summary: Get device details
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Device details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /devices/{device_id}/metrics:
+    get:
+      tags: [Devices]
+      summary: Get device metrics
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: metric_type
+          in: query
+          schema:
+            type: string
+            enum: [cpu, memory, gpu, disk, network]
+        - name: time_range
+          in: query
+          schema:
+            type: string
+            enum: [1h, 6h, 24h, 7d, 30d]
+            default: 1h
+      responses:
+        '200':
+          description: Device metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  metrics:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SystemMetric'
+
+  # ==========================================
+  # AI MODELS
+  # ==========================================
+  /models:
+    get:
+      tags: [AI Models]
+      summary: List AI models
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: model_type
+          in: query
+          schema:
+            type: string
+            enum: [face_recognition, person_detection, vehicle_classification, license_plate_ocr]
+        - name: platform
+          in: query
+          schema:
+            type: string
+            enum: [raspberry-pi-5, radxa-rock-5, jetson-nano, core-i5]
+      responses:
+        '200':
+          description: List of AI models
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  models:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AIModel'
+
+  /models/{model_id}/deploy:
+    post:
+      tags: [AI Models]
+      summary: Deploy model to device
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: model_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [device_id]
+              properties:
+                device_id:
+                  type: string
+                  format: uuid
+                config:
+                  type: object
+                  description: Device-specific configuration
+      responses:
+        '200':
+          description: Deployment started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelDeployment'
+
+  # ==========================================
+  # HUMAN ANALYSIS
+  # ==========================================
+  /human-analysis/face-recognition:
+    post:
+      tags: [Human Analysis]
+      summary: Face recognition inference
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [image]
+              properties:
+                image:
+                  type: string
+                  format: binary
+                  description: Image file for face recognition
+                device_id:
+                  type: string
+                  format: uuid
+                camera_id:
+                  type: string
+                threshold:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+                  default: 0.8
+      responses:
+        '200':
+          description: Face recognition results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  faces:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FaceDetection'
+                  processing_time_ms:
+                    type: integer
+
+  /human-analysis/person-detection:
+    post:
+      tags: [Human Analysis]
+      summary: Person detection inference
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [image]
+              properties:
+                image:
+                  type: string
+                  format: binary
+                device_id:
+                  type: string
+                  format: uuid
+                camera_id:
+                  type: string
+                confidence_threshold:
+                  type: number
+                  default: 0.5
+      responses:
+        '200':
+          description: Person detection results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detections:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PersonDetection'
+                  person_count:
+                    type: integer
+                  processing_time_ms:
+                    type: integer
+
+  # ==========================================
+  # VEHICLE ANALYSIS
+  # ==========================================
+  /vehicle-analysis/license-plate:
+    post:
+      tags: [Vehicle Analysis]
+      summary: License plate recognition
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [image]
+              properties:
+                image:
+                  type: string
+                  format: binary
+                device_id:
+                  type: string
+                  format: uuid
+                camera_id:
+                  type: string
+                country_code:
+                  type: string
+                  example: VN
+      responses:
+        '200':
+          description: License plate recognition results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plates:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LicensePlate'
+                  processing_time_ms:
+                    type: integer
+
+  /vehicle-analysis/vehicle-detection:
+    post:
+      tags: [Vehicle Analysis]
+      summary: Vehicle detection and classification
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [image]
+              properties:
+                image:
+                  type: string
+                  format: binary
+                device_id:
+                  type: string
+                  format: uuid
+                camera_id:
+                  type: string
+      responses:
+        '200':
+          description: Vehicle detection results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  vehicles:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/VehicleDetection'
+                  processing_time_ms:
+                    type: integer
+
+  # ==========================================
+  # ANALYTICS
+  # ==========================================
+  /analytics/traffic:
+    get:
+      tags: [Analytics]
+      summary: Get traffic analytics
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: location_id
+          in: query
+          schema:
+            type: string
+        - name: start_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: end_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: analytics_type
+          in: query
+          schema:
+            type: string
+            enum: [flow, congestion, violation, speed]
+      responses:
+        '200':
+          description: Traffic analytics data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  analytics:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TrafficAnalytics'
+                  summary:
+                    type: object
+                    properties:
+                      total_vehicles:
+                        type: integer
+                      average_speed:
+                        type: number
+                      congestion_periods:
+                        type: integer
+
+  # ==========================================
+  # SYSTEM
+  # ==========================================
+  /system/health:
+    get:
+      tags: [System]
+      summary: System health check
+      responses:
+        '200':
+          description: System health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy, degraded, unhealthy]
+                  services:
+                    type: object
+                    properties:
+                      api_gateway:
+                        type: string
+                        enum: [up, down]
+                      model_server:
+                        type: string
+                        enum: [up, down]
+                      data_manager:
+                        type: string
+                        enum: [up, down]
+                      database:
+                        type: string
+                        enum: [up, down]
+                  version:
+                    type: string
+                  uptime_seconds:
+                    type: integer
+
+  /system/config:
+    get:
+      tags: [System]
+      summary: Get system configuration
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: System configuration
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  config:
+                    type: object
+                    additionalProperties:
+                      type: string
+
+# ==========================================
+# COMPONENTS
+# ==========================================
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+
+  schemas:
+    # Base schemas
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        code:
+          type: integer
+
+    ValidationError:
+      type: object
+      properties:
+        error:
+          type: string
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+
+    # User Management
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        full_name:
+          type: string
+        role:
+          type: string
+          enum: [admin, operator, viewer, user]
+        is_active:
+          type: boolean
+        last_login:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    # Device Management
+    Device:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        device_name:
+          type: string
+        device_type:
+          type: string
+          enum: [raspberry-pi-5, radxa-rock-5, jetson-nano, core-i5]
+        ip_address:
+          type: string
+          format: ipv4
+        mac_address:
+          type: string
+        platform_info:
+          type: object
+        status:
+          type: string
+          enum: [online, offline, maintenance]
+        last_heartbeat:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    DeviceCreate:
+      type: object
+      required: [device_name, device_type, ip_address]
+      properties:
+        device_name:
+          type: string
+        device_type:
+          type: string
+          enum: [raspberry-pi-5, radxa-rock-5, jetson-nano, core-i5]
+        ip_address:
+          type: string
+          format: ipv4
+        mac_address:
+          type: string
+        platform_info:
+          type: object
+
+    SystemMetric:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        device_id:
+          type: string
+          format: uuid
+        metric_type:
+          type: string
+          enum: [cpu, memory, gpu, disk, network]
+        metric_value:
+          type: number
+        metric_unit:
+          type: string
+        recorded_at:
+          type: string
+          format: date-time
+
+    # AI Models
+    AIModel:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        model_name:
+          type: string
+        model_type:
+          type: string
+        model_version:
+          type: string
+        model_path:
+          type: string
+        supported_platforms:
+          type: array
+          items:
+            type: string
+        performance_metrics:
+          type: object
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    ModelDeployment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        model_id:
+          type: string
+          format: uuid
+        device_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, deployed, failed, stopped]
+        deployed_at:
+          type: string
+          format: date-time
+
+    # Human Analysis
+    FaceDetection:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        person_id:
+          type: string
+          format: uuid
+        confidence_score:
+          type: number
+        bounding_box:
+          type: object
+          properties:
+            x:
+              type: integer
+            y:
+              type: integer
+            width:
+              type: integer
+            height:
+              type: integer
+        metadata:
+          type: object
+          properties:
+            age:
+              type: integer
+            gender:
+              type: string
+            emotion:
+              type: string
+        detected_at:
+          type: string
+          format: date-time
+
+    PersonDetection:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        detection_id:
+          type: string
+        confidence_score:
+          type: number
+        bounding_box:
+          type: object
+          properties:
+            x:
+              type: integer
+            y:
+              type: integer
+            width:
+              type: integer
+            height:
+              type: integer
+        detected_at:
+          type: string
+          format: date-time
+
+    # Vehicle Analysis
+    LicensePlate:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        plate_number:
+          type: string
+        country_code:
+          type: string
+        plate_type:
+          type: string
+        confidence_score:
+          type: number
+        bounding_box:
+          type: object
+        detected_at:
+          type: string
+          format: date-time
+
+    VehicleDetection:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        detection_id:
+          type: string
+        vehicle_type:
+          type: string
+        brand:
+          type: string
+        model:
+          type: string
+        color:
+          type: string
+        confidence_score:
+          type: number
+        bounding_box:
+          type: object
+        detected_at:
+          type: string
+          format: date-time
+
+    TrafficAnalytics:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        analytics_type:
+          type: string
+        location_id:
+          type: string
+        vehicle_count:
+          type: integer
+        average_speed:
+          type: number
+        congestion_level:
+          type: string
+        time_period:
+          type: string
+          format: date-time
