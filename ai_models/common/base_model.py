@@ -233,7 +233,7 @@ class BaseModel(ABC):
         }
         
         if self.metadata:
-            info['metadata'] = self.metadata.__dict__
+            info['metadata'] = self.metadata
         
         return info
     
