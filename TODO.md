@@ -22,9 +22,9 @@
 ### ✅ **TUẦN 3 - HUMAN ANALYSIS MODELS:**
 - [x] **Face Detection** - YOLOv8-Face implementation ✅ COMPLETED
 - [x] **Face Recognition** - FaceNet/ArcFace implementation ✅ COMPLETED
+- [x] **Person Detection** - YOLOv8-Person implementation ✅ COMPLETED
 - [x] **AI Infrastructure** - BaseModel, ModelConfig, InferenceResult ✅ COMPLETED
 - [x] **Model Management** - ModelManager, platform optimization ✅ COMPLETED
-- [ ] **Person Detection** - YOLOv8-Person implementation
 - [ ] **Behavior Analysis** - Custom CNN for behavior classification
 - [ ] **Model Training** - Dataset preparation và training pipelines
 
@@ -71,17 +71,17 @@
 ## 📊 **PROGRESS SUMMARY**
 
 - **PHASE 1:** 100% Complete ✅
-- **PHASE 2:** 50% Complete (Face Detection + Face Recognition Complete) 🚀
+- **PHASE 2:** 75% Complete (Face Detection + Face Recognition + Person Detection Complete) 🚀
 - **PHASE 3:** 0% Complete (Pending)
 - **PHASE 4:** 0% Complete (Pending)
 
-**Overall Progress: 37% Complete** 🎯
+**Overall Progress: 44% Complete** 🎯
 
 ### 🎯 **CURRENT FOCUS:**
-- **Person Detection Model** - Next implementation priority
-- **Behavior Analysis Model** - Custom CNN implementation
+- **Behavior Analysis Model** - Next implementation priority
 - **Vehicle Analysis Models** - Week 4 preparation
 
 ### ✅ **COMPLETED MODELS:**
 - **Face Detection** - YOLOv8-based với confidence filtering
 - **Face Recognition** - FaceNet-based với database management
+- **Person Detection** - YOLOv8-based với tracking & counting
