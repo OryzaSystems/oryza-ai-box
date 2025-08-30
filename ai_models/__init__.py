@@ -35,7 +35,8 @@ from .human_analysis import (
 
 from .vehicle_analysis import (
     VehicleDetector,
-    LicensePlateOCR
+    LicensePlateOCR,
+    VehicleClassifier
 )
 
 from .common import (
@@ -55,6 +56,7 @@ __all__ = [
     # Vehicle Analysis
     "VehicleDetector",
     "LicensePlateOCR",
+    "VehicleClassifier",
     
     # Common
     "BaseModel",
