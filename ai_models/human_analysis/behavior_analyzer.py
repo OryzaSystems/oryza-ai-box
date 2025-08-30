@@ -216,7 +216,7 @@ class BehaviorAnalyzer(BaseModel):
             image = (image - mean) / std
             
             # Convert to tensor and add batch dimension
-            tensor = torch.from_numpy(image).permute(2, 0, 1).unsqueeze(0)
+            tensor = torch.from_numpy(image).permute(2, 0, 1).unsqueeze(0).float()
             
             return tensor.to(self.device)
             
