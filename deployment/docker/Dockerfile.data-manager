@@ -1,0 +1,72 @@
+# ==========================================
+# AI BOX - Data Manager Dockerfile
+# Handles data storage, processing, and analytics
+# ==========================================
+
+FROM python:3.11-slim as base
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    DATA_PATH=/app/data \
+    DB_PATH=/app/database
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    git \
+    postgresql-client \
+    redis-tools \
+    sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app user and directories
+RUN groupadd -r appuser && useradd -r -g appuser appuser && \
+    mkdir -p /app/data /app/database /app/logs /app/backups
+
+WORKDIR /app
+
+# ==========================================
+# Dependencies Installation
+# ==========================================
+FROM base as deps
+
+# Copy requirements
+COPY requirements.txt pyproject.toml ./
+
+# Install Python dependencies
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install -r requirements.txt && \
+    pip install psycopg2-binary redis pymongo
+
+# ==========================================
+# Production Build
+# ==========================================
+FROM deps as production
+
+# Copy application code
+COPY . .
+
+# Create database initialization scripts
+COPY deployment/scripts/init_database.sql /docker-entrypoint-initdb.d/
+
+# Set permissions
+RUN chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8002/health || exit 1
+
+# Expose port
+EXPOSE 8002
+
+# Volume for persistent data
+VOLUME ["/app/data", "/app/database", "/app/backups"]
+
+# Default command
+CMD ["python", "-m", "services.data_manager.main"]

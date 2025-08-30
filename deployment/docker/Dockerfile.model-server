@@ -1,0 +1,153 @@
+# ==========================================
+# AI BOX - Model Server Dockerfile
+# Optimized for AI inference with GPU/NPU support
+# ==========================================
+
+# ==========================================
+# Stage 1: Base Image Selection
+# ==========================================
+ARG PLATFORM=cpu
+FROM python:3.11-slim as base-cpu
+FROM nvidia/cuda:12.1-runtime-ubuntu22.04 as base-gpu
+FROM python:3.11-slim as base-edge
+
+# Select base based on platform
+FROM base-${PLATFORM} as base
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    MODEL_PATH=/app/models \
+    DEVICE=auto
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    git \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app user and directories
+RUN groupadd -r appuser && useradd -r -g appuser appuser && \
+    mkdir -p /app/models /app/logs /app/cache
+
+WORKDIR /app
+
+# ==========================================
+# Stage 2: Python Dependencies
+# ==========================================
+FROM base as deps
+
+# Install Python and pip
+RUN if [ ! -f /usr/bin/python3 ]; then \
+        apt-get update && apt-get install -y python3 python3-pip && \
+        rm -rf /var/lib/apt/lists/*; \
+    fi
+
+# Copy requirements
+COPY requirements.txt pyproject.toml ./
+
+# Install PyTorch based on platform
+RUN if [ "${PLATFORM}" = "gpu" ]; then \
+        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121; \
+    else \
+        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu; \
+    fi
+
+# Install other dependencies
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install -r requirements.txt
+
+# ==========================================
+# Stage 3: AI Model Preparation
+# ==========================================
+FROM deps as models
+
+# Copy model preparation scripts
+COPY ai_models/ ./ai_models/
+COPY tools/prepare_models.py ./tools/
+
+# Download and prepare base models
+RUN python tools/prepare_models.py --download-base-models
+
+# ==========================================
+# Stage 4: Production Build
+# ==========================================
+FROM deps as production
+
+# Copy application code
+COPY . .
+
+# Copy prepared models
+COPY --from=models /app/models /app/models
+
+# Set permissions
+RUN chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8001/health || exit 1
+
+# Expose port
+EXPOSE 8001
+
+# Default command
+CMD ["python", "-m", "services.model_server.main"]
+
+# ==========================================
+# Stage 5: Platform-Specific Optimizations
+# ==========================================
+
+# Raspberry Pi 5 + Hailo-8 optimization
+FROM production as raspberry-pi-5
+RUN pip install hailo-platform hailo-model-zoo
+ENV DEVICE=hailo \
+    HAILO_ARCH=hailo8 \
+    OPTIMIZATION_LEVEL=high
+
+# Radxa Rock 5 ITX + NPU optimization  
+FROM production as radxa-rock-5
+RUN pip install rknn-toolkit2
+ENV DEVICE=npu \
+    NPU_ARCH=rk3588 \
+    OPTIMIZATION_LEVEL=medium
+
+# Jetson Nano optimization
+FROM production as jetson-nano
+RUN pip install jetson-gpio
+ENV DEVICE=cuda \
+    JETSON_MODEL=nano \
+    OPTIMIZATION_LEVEL=low
+
+# Core i5 + GPU optimization
+FROM production as core-i5
+ENV DEVICE=cuda \
+    GPU_MEMORY_FRACTION=0.8 \
+    OPTIMIZATION_LEVEL=high
+
+# ==========================================
+# Stage 6: Edge Deployment
+# ==========================================
+FROM production as edge
+
+# Install edge-specific packages
+RUN pip install onnxruntime-gpu
+
+# Edge configuration
+ENV EDGE_MODE=true \
+    BATCH_SIZE=1 \
+    MAX_WORKERS=2 \
+    MEMORY_LIMIT=2GB
+
+# Optimized startup command for edge
+CMD ["python", "-m", "services.model_server.main", "--edge-mode", "--workers", "2"]
