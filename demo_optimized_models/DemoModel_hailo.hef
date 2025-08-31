@@ -1,0 +1,3 @@
+# Hailo Executable Format for demo_optimized_models/DemoModel_hailo.onnx
+# Target: Hailo-8
+# Precision: fp16

@@ -1,0 +1,3 @@
+# RKNN Model for demo_optimized_models/DemoModel_rknn.onnx
+# Target: RK3588 NPU
+# Precision: fp16
